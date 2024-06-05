@@ -1,0 +1,4 @@
+[tool.pyright]
+include = ["lib"]
+extraPaths = ["lib"]
+typeCheckingMode = "off"
