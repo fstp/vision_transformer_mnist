@@ -1,3 +1,5 @@
+import unittest
+
 import torch
 from icecream import ic
 from torch import nn
@@ -48,11 +50,18 @@ class PatchEmbedding(nn.Module):
         return x
 
 
+class TestPatchEmbedding(unittest.TestCase):
+    def test_shape(self):
+        model = PatchEmbedding(
+            embed_dim, patch_size, num_patches, dropout, in_channels
+        ).to(device)
+        x = torch.randn(512, 1, 28, 28)
+        self.assertEqual(model(x).shape, (512, num_patches + 1, embed_dim))
+
+
 if __name__ == "__main__":
     model = PatchEmbedding(embed_dim, patch_size, num_patches, dropout, in_channels).to(
         device
     )
     ic(model)
-    x = torch.randn(512, 1, 28, 28)
-    ic(model(x).shape)
-    ic(model(x).shape == (512, num_patches + 1, embed_dim))
+    unittest.main()
