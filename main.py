@@ -4,6 +4,7 @@ import unittest
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 from icecream import ic
 from sklearn.model_selection import train_test_split
@@ -112,17 +113,84 @@ class VisionTransformer(nn.Module):
         return x
 
 
-class TestPatchEmbedding(unittest.TestCase):
-    def test_shape(self):
+class MnistTrainDataset(Dataset):
+    def __init__(self, images, labels, indices):
+        self.images = images
+        self.labels = labels
+        self.indices = indices
+        self.transform = transforms.Compose(
+            [
+                transforms.ToPILImage(),
+                transforms.RandomRotation(15),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5,), (0.5,)),
+            ]
+        )
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        image = self.images[idx].reshape((28, 28)).astype(np.uint8)
+        label = self.labels[idx]
+        index = self.indices[idx]
+        image = self.transform(image)
+        return {"image": image, "label": label, "index": index}
+
+
+class MnistValDataset(Dataset):
+    def __init__(self, images, labels, indices):
+        self.images = images
+        self.labels = labels
+        self.indices = indices
+        self.transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.5,), (0.5,)),
+            ]
+        )
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        image = self.images[idx].reshape((28, 28)).astype(np.uint8)
+        label = self.labels[idx]
+        index = self.indices[idx]
+        image = self.transform(image)
+        return {"image": image, "label": label, "index": index}
+
+
+class MnistSubmitDataset(Dataset):
+    def __init__(self, images, indices):
+        self.images = images
+        self.indices = indices
+        self.transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.5,), (0.5,)),
+            ]
+        )
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        image = self.images[idx].reshape((28, 28)).astype(np.uint8)
+        index = self.indices[idx]
+        image = self.transform(image)
+        return {"image": image, "index": index}
+
+
+class Unittests(unittest.TestCase):
+    def test_patch_embeddings_shape(self):
         model = PatchEmbedding(
             embed_dim, patch_size, num_patches, dropout, in_channels
         ).to(device)
         x = torch.randn(512, 1, 28, 28)
         self.assertEqual(model(x).shape, (512, num_patches + 1, embed_dim))
 
-
-class TestVisionTransformer(unittest.TestCase):
-    def test_shape(self):
+    def test_vision_trainsformer_shape(self):
         model = VisionTransformer(
             num_patches,
             num_classes,
@@ -139,9 +207,47 @@ class TestVisionTransformer(unittest.TestCase):
         self.assertEqual(model(x).shape, (512, num_classes))
 
 
+def load_data():
+    train_df = pd.read_csv("data/train.csv")
+    test_df = pd.read_csv("data/test.csv")
+    train_df, val_df = train_test_split(
+        train_df, test_size=0.1, random_state=random_seed, shuffle=True
+    )
+
+    f, axarr = plt.subplots(1, 3)
+
+    train_dataset = MnistTrainDataset(
+        train_df.iloc[:, 1:].values.astype(np.uint8),
+        train_df.iloc[:, 0].values,
+        train_df.index.values,
+    )
+    ic(len(train_dataset))
+    axarr[0].imshow(train_dataset[0]["image"].squeeze(), cmap="gray")
+    axarr[0].set_title("Train Image")
+
+    val_dataset = MnistValDataset(
+        val_df.iloc[:, 1:].values.astype(np.uint8),
+        val_df.iloc[:, 0].values,
+        val_df.index.values,
+    )
+    ic(len(val_dataset))
+    axarr[1].imshow(val_dataset[0]["image"].squeeze(), cmap="gray")
+    axarr[1].set_title("Val Image")
+
+    test_dataset = MnistSubmitDataset(
+        test_df.values.astype(np.uint8), test_df.index.values
+    )
+    ic(len(test_dataset))
+    axarr[2].imshow(test_dataset[0]["image"].squeeze(), cmap="gray")
+    axarr[2].set_title("Test Image")
+
+    plt.show()
+
+
 if __name__ == "__main__":
     # model = PatchEmbedding(embed_dim, patch_size, num_patches, dropout, in_channels).to(
     #     device
     # )
     # ic(model)
+    load_data()
     unittest.main()
