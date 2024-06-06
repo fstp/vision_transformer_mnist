@@ -1,9 +1,20 @@
+import random
+import timeit
 import unittest
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from icecream import ic
-from torch import nn
+from sklearn.model_selection import train_test_split
+from torch import nn, optim
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
+from tqdm import tqdm
 
+random_seed = 42
+batch_size = 512
+epochs = 40
 learning_rate = 1e-4
 num_classes = 10
 patch_size = 4
@@ -18,6 +29,14 @@ activation = "gelu"
 num_encoders = 4
 embed_dim = (patch_size**2) * in_channels  # 16
 num_patches = (img_size // patch_size) ** 2  # 49
+
+random.seed(random_seed)
+np.random.seed(random_seed)
+torch.manual_seed(random_seed)
+torch.cuda.manual_seed(random_seed)
+torch.cuda.manual_seed_all(random_seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -46,6 +65,7 @@ class PatchEmbedding(nn.Module):
         cls_token = self.cls_token.expand(x.shape[0], -1, -1)
         x = self.patcher(x).permute(0, 2, 1)
         x = torch.cat([cls_token, x], dim=1)
+        x = self.position_embeddings + x
         x = self.dropout(x)
         return x
 
