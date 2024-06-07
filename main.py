@@ -1,4 +1,7 @@
+import argparse
+import os
 import random
+import re
 import timeit
 import unittest
 from pathlib import Path
@@ -22,7 +25,7 @@ num_classes = 10
 patch_size = 4
 img_size = 28
 in_channels = 1
-num_heads = 8
+num_heads = 16
 dropout = 0.001
 hidden_dim = 768
 adam_weight_decay = 0
@@ -297,10 +300,23 @@ def create_optimizer(model):
 def save_checkpoint(epoch, model, optimizer, loss, accuracy):
     Path("checkpoints").mkdir(exist_ok=True)
 
-    # Print model's state_dict
-    print("Model's state_dict:")
-    for param_tensor in model.state_dict():
-        print(param_tensor, "\t", model.state_dict()[param_tensor].size())
+    print(f"Random seed: {random_seed}")
+    print(f"Batch size: {batch_size}")
+    print(f"Epochs: {epochs}")
+    print(f"Learning rate: {learning_rate}")
+    print(f"Num classes: {num_classes}")
+    print(f"Patch size: {patch_size}")
+    print(f"Image size: {img_size}")
+    print(f"In channels: {in_channels}")
+    print(f"Num heads: {num_heads}")
+    print(f"Dropout: {dropout}")
+    print(f"Hidden dim: {hidden_dim}")
+    print(f"Adam weight decay: {adam_weight_decay}")
+    print(f"Adam betas: {adam_betas}")
+    print(f"Activation: {activation}")
+    print(f"Num encoders: {num_encoders}")
+    print(f"Embed dim: {embed_dim}")
+    print(f"Num patches: {num_patches}")
 
     print(f"Epoch: {epoch}")
     print(f"Loss: {loss}")
@@ -382,7 +398,7 @@ def training_loop(model, optimizer, dataloader):
         print(f"Train accuracy epoch {epoch+1}: {train_accuracy:.4f}")
         print(f"Valid accuracy epoch {epoch+1}: {val_accuracy:.4f}")
         print("-" * 30)
-        if (epoch + 1) % epochs_per_checkpoint == 0:
+        if (epoch + 1 < epochs) and (epoch + 1) % epochs_per_checkpoint == 0:
             save_checkpoint(
                 epoch,
                 model,
@@ -391,11 +407,72 @@ def training_loop(model, optimizer, dataloader):
                 {"train": train_accuracy, "val": val_accuracy},
             )
 
+    # Always save the final model
+    save_checkpoint(
+        epochs - 1,
+        model,
+        optimizer,
+        {"train": train_loss, "val": val_loss},
+        {"train": train_accuracy, "val": val_accuracy},
+    )
+
     stop = timeit.default_timer()
-    print(f"Training time: {stop - start:.2f} seconds")
+    print(f"Training complete, time: {stop - start:.2f} seconds")
+
+
+def find_latest_checkpoint_file(directory):
+    # List all files in the directory
+    files = os.listdir(directory)
+
+    # Regular expression to match files named checkpoint_<number>
+    pattern = re.compile(r"^checkpoint_(\d+).tar$")
+
+    # Initialize variables to keep track of the latest checkpoint
+    latest_number = -1
+    latest_checkpoint_file = None
+
+    # Iterate over the files and find the latest checkpoint number
+    for file in files:
+        match = pattern.match(file)
+        if match:
+            number = int(match.group(1))
+            if number > latest_number:
+                latest_number = number
+                latest_checkpoint_file = file
+
+    return latest_checkpoint_file
+
+
+def do_test():
+    checkpoint_file = find_latest_checkpoint_file("checkpoints")
+    print(f"Using device: {device}")
+    print(f"Loading checkpoint: {checkpoint_file}")
+    model = create_model()
+    optimizer = create_optimizer(model)
+    checkpoint = torch.load(f"checkpoints/{checkpoint_file}", map_location=device)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    epoch = checkpoint["epoch"]
+    train_loss = checkpoint["loss"]["train"]
+    val_loss = checkpoint["loss"]["val"]
+    train_accuracy = checkpoint["accuracy"]["train"]
+    val_accuracy = checkpoint["accuracy"]["val"]
+    print(f"Epoch: {epoch}")
+    print(f"Train loss: {train_loss}")
+    print(f"Val loss: {val_loss}")
+    print(f"Train accuracy: {train_accuracy}")
+    print(f"Val accuracy: {val_accuracy}")
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test", action="store_true")
+    args = parser.parse_args()
+
+    if args.test:
+        do_test()
+        exit(0)
+
     model = create_model()
     optimizer = create_optimizer(model)
     dataset = create_datasets()
