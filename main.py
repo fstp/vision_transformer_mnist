@@ -314,7 +314,7 @@ def save_checkpoint(epoch, model, optimizer, loss, accuracy):
             "loss": loss,
             "accuracy": accuracy,
         },
-        f"checkpoints/checkpoint_{epoch}.tar",
+        f"checkpoints/checkpoint_{epoch + 1}.tar",
     )
     print("-" * 30)
 
@@ -400,7 +400,7 @@ if __name__ == "__main__":
     optimizer = create_optimizer(model)
     dataset = create_datasets()
     dataloader = create_dataloaders(dataset)
-    print("Start training")
+    print(f"Start training (device={device})")
     training_loop(model, optimizer, dataloader)
     torch.cuda.empty_cache()
     # unittest.main()
