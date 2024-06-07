@@ -1,6 +1,7 @@
 import random
 import timeit
 import unittest
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -207,7 +208,7 @@ class Unittests(unittest.TestCase):
         self.assertEqual(model(x).shape, (512, num_classes))
 
 
-def load_data():
+def create_datasets():
     train_df = pd.read_csv("data/train.csv")
     test_df = pd.read_csv("data/test.csv")
     train_df, val_df = train_test_split(
@@ -221,7 +222,6 @@ def load_data():
         train_df.iloc[:, 0].values,
         train_df.index.values,
     )
-    ic(len(train_dataset))
     axarr[0].imshow(train_dataset[0]["image"].squeeze(), cmap="gray")
     axarr[0].set_title("Train Image")
 
@@ -230,24 +230,177 @@ def load_data():
         val_df.iloc[:, 0].values,
         val_df.index.values,
     )
-    ic(len(val_dataset))
     axarr[1].imshow(val_dataset[0]["image"].squeeze(), cmap="gray")
     axarr[1].set_title("Val Image")
 
     test_dataset = MnistSubmitDataset(
         test_df.values.astype(np.uint8), test_df.index.values
     )
-    ic(len(test_dataset))
     axarr[2].imshow(test_dataset[0]["image"].squeeze(), cmap="gray")
     axarr[2].set_title("Test Image")
 
-    plt.show()
+    # plt.show()
+    return {
+        "train": train_dataset,
+        "val": val_dataset,
+        "test": test_dataset,
+    }
+
+
+def create_dataloaders(datasets):
+    train_loader = DataLoader(
+        datasets["train"],
+        batch_size=batch_size,
+        shuffle=True,
+    )
+    val_loader = DataLoader(
+        datasets["val"],
+        batch_size=batch_size,
+        shuffle=False,
+    )
+    test_loader = DataLoader(
+        datasets["test"],
+        batch_size=batch_size,
+        shuffle=False,
+    )
+    return {
+        "train": train_loader,
+        "val": val_loader,
+        "test": test_loader,
+    }
+
+
+def create_model():
+    return VisionTransformer(
+        num_patches,
+        num_classes,
+        patch_size,
+        embed_dim,
+        num_encoders,
+        num_heads,
+        hidden_dim,
+        dropout,
+        activation,
+        in_channels,
+    ).to(device)
+
+
+def create_optimizer(model):
+    return optim.AdamW(
+        model.parameters(),
+        lr=learning_rate,
+        betas=adam_betas,
+        weight_decay=adam_weight_decay,
+    )
+
+
+def save_checkpoint(epoch, model, optimizer, loss, accuracy):
+    Path("checkpoints").mkdir(exist_ok=True)
+
+    # Print model's state_dict
+    print("Model's state_dict:")
+    for param_tensor in model.state_dict():
+        print(param_tensor, "\t", model.state_dict()[param_tensor].size())
+
+    print(f"Epoch: {epoch}")
+    print(f"Loss: {loss}")
+    print(f"Accuracy: {accuracy}")
+    print("Saving checkpoint...")
+    torch.save(
+        {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "loss": loss,
+            "accuracy": accuracy,
+        },
+        f"checkpoints/checkpoint_{epoch}.tar",
+    )
+    print("-" * 30)
+
+
+def training_loop(model, optimizer, dataloader):
+    train_dataloader = dataloader["train"]
+    val_dataloader = dataloader["val"]
+
+    epochs_per_checkpoint = 5
+    print(f"Epochs per checkpoint: {epochs_per_checkpoint}")
+    criterion = nn.CrossEntropyLoss()
+    start = timeit.default_timer()
+
+    for epoch in tqdm(range(epochs), position=0, leave=True):
+        model.train()
+        train_labels = []
+        train_preds = []
+        train_running_loss = 0
+        for idx, img_label in enumerate(tqdm(train_dataloader, position=0, leave=True)):
+            img = img_label["image"].float().to(device)
+            label = img_label["label"].type(torch.uint8).to(device)
+            y_pred = model(img)
+            y_pred_label = torch.argmax(y_pred, dim=1)
+
+            train_labels.extend(label.cpu().detach())
+            train_preds.extend(y_pred_label.cpu().detach())
+
+            loss = criterion(y_pred, label)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            train_running_loss += loss.item()
+        train_loss = train_running_loss / len(train_dataloader)
+
+        model.eval()
+        val_labels = []
+        val_preds = []
+        val_running_loss = 0
+        with torch.no_grad():
+            for idx, img_label in enumerate(
+                tqdm(val_dataloader, position=0, leave=True)
+            ):
+                img = img_label["image"].float().to(device)
+                label = img_label["label"].type(torch.uint8).to(device)
+                y_pred = model(img)
+                y_pred_label = torch.argmax(y_pred, dim=1)
+
+                val_labels.extend(label.cpu().detach())
+                val_preds.extend(y_pred_label.cpu().detach())
+
+                loss = criterion(y_pred, label)
+                val_running_loss += loss.item()
+        val_loss = val_running_loss / len(val_dataloader)
+        train_accuracy = sum(
+            1 for x, y in zip(train_labels, train_preds) if x == y
+        ) / len(train_labels)
+        val_accuracy = sum(1 for x, y in zip(val_labels, val_preds) if x == y) / len(
+            val_labels
+        )
+        print("-" * 30)
+        print(f"Train loss epoch {epoch+1}: {train_loss:.4f}")
+        print(f"Valid loss epoch {epoch+1}: {val_loss:.4f}")
+        print(f"Train accuracy epoch {epoch+1}: {train_accuracy:.4f}")
+        print(f"Valid accuracy epoch {epoch+1}: {val_accuracy:.4f}")
+        print("-" * 30)
+        if (epoch + 1) % epochs_per_checkpoint == 0:
+            save_checkpoint(
+                epoch,
+                model,
+                optimizer,
+                {"train": train_loss, "val": val_loss},
+                {"train": train_accuracy, "val": val_accuracy},
+            )
+
+    stop = timeit.default_timer()
+    print(f"Training time: {stop - start:.2f} seconds")
 
 
 if __name__ == "__main__":
-    # model = PatchEmbedding(embed_dim, patch_size, num_patches, dropout, in_channels).to(
-    #     device
-    # )
-    # ic(model)
-    load_data()
-    unittest.main()
+    model = create_model()
+    optimizer = create_optimizer(model)
+    dataset = create_datasets()
+    dataloader = create_dataloaders(dataset)
+    print("Start training")
+    training_loop(model, optimizer, dataloader)
+    torch.cuda.empty_cache()
+    # unittest.main()
